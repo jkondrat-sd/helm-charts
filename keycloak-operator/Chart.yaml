@@ -272,8 +272,8 @@ annotations:
         secret: secret-name-in-operator-ns
         url: https://keycloak.example.com
   artifacthub.io/images: |
-    - name: keycloak-operator:1.27.1
-      image: epamedp/keycloak-operator:1.27.1
+    - name: keycloak-operator:1.32.0
+      image: epamedp/keycloak-operator:1.32.0
   artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |
     - name: KubeRocketCI Documentation
@@ -283,7 +283,7 @@ annotations:
   artifacthub.io/operator: "true"
   artifacthub.io/operatorCapabilities: Deep Insights
 apiVersion: v2
-appVersion: 1.27.1
+appVersion: 1.32.0
 description: A Helm chart for KubeRocketCI Keycloak Operator
 home: https://docs.kuberocketci.io/
 icon: https://docs.kuberocketci.io/img/logo.svg
@@ -308,4 +308,4 @@ name: keycloak-operator
 sources:
 - https://github.com/epam/edp-keycloak-operator
 type: application
-version: 1.27.1
+version: 1.32.0
