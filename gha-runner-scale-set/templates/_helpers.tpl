@@ -43,7 +43,7 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/part-of: gha-rs
 actions.github.com/scale-set-name: {{ include "gha-runner-scale-set.scale-set-name" . }}
-actions.github.com/scale-set-namespace: {{ .Release.Namespace }}
+actions.github.com/scale-set-namespace: {{ include "gha-runner-scale-set.namespace" . }}
 {{- end }}
 
 {{/*
@@ -54,6 +54,20 @@ app.kubernetes.io/name: {{ include "gha-runner-scale-set.scale-set-name" . }}
 app.kubernetes.io/instance: {{ include "gha-runner-scale-set.scale-set-name" . }}
 {{- end }}
 
+{{/*
+Render a ResourceMeta block for AutoscalingRunnerSet spec fields.
+*/}}
+{{- define "gha-runner-scale-set.resourceMetaSpec" -}}
+{{- with .labels }}
+labels:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- with .annotations }}
+annotations:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+
 {{- define "gha-runner-scale-set.githubsecret" -}}
   {{- if kindIs "string" .Values.githubConfigSecret }}
     {{- if not (empty .Values.githubConfigSecret) }}
@@ -62,12 +76,12 @@ app.kubernetes.io/instance: {{ include "gha-runner-scale-set.scale-set-name" . }
 {{- fail "Values.githubConfigSecret is required for setting auth with GitHub server." }}
     {{- end }}
   {{- else }}
-{{- include "gha-runner-scale-set.fullname" . }}-github-secret
+{{- include "gha-runner-scale-set.fullname" . | replace "_" "-" }}-github-secret
   {{- end }}
 {{- end }}
 
 {{- define "gha-runner-scale-set.noPermissionServiceAccountName" -}}
-{{- include "gha-runner-scale-set.fullname" . }}-no-permission
+{{- include "gha-runner-scale-set.fullname" . | replace "_" "-" }}-no-permission
 {{- end }}
 
 {{- define "gha-runner-scale-set.kubeModeRoleName" -}}
@@ -79,7 +93,7 @@ app.kubernetes.io/instance: {{ include "gha-runner-scale-set.scale-set-name" . }
 {{- end }}
 
 {{- define "gha-runner-scale-set.kubeModeServiceAccountName" -}}
-{{- include "gha-runner-scale-set.fullname" . }}-kube-mode
+{{- include "gha-runner-scale-set.fullname" . | replace "_" "-" }}-kube-mode
 {{- end }}
 
 {{- define "gha-runner-scale-set.dind-init-container" -}}
@@ -87,7 +101,7 @@ app.kubernetes.io/instance: {{ include "gha-runner-scale-set.scale-set-name" . }
   {{- if eq $val.name "runner" }}
 image: {{ $val.image }}
 command: ["cp"]
-args: ["-r", "-v", "/home/runner/externals/.", "/home/runner/tmpDir/"]
+args: ["-r", "/home/runner/externals/.", "/home/runner/tmpDir/"]
 volumeMounts:
   - name: dind-externals
     mountPath: /home/runner/tmpDir
@@ -99,18 +113,29 @@ volumeMounts:
 image: docker:dind
 args:
   - dockerd
-  - --host=unix:///run/docker/docker.sock
+  - --host=unix:///var/run/docker.sock
   - --group=$(DOCKER_GROUP_GID)
 env:
   - name: DOCKER_GROUP_GID
     value: "123"
 securityContext:
   privileged: true
+{{- if (ge (.Capabilities.KubeVersion.Minor | int) 29) }}
+restartPolicy: Always
+startupProbe:
+  exec:
+    command:
+      - docker
+      - info
+  initialDelaySeconds: 0
+  failureThreshold: 24
+  periodSeconds: 5
+{{- end }}
 volumeMounts:
   - name: work
     mountPath: /home/runner/_work
   - name: dind-sock
-    mountPath: /run/docker
+    mountPath: /var/run
   - name: dind-externals
     mountPath: /home/runner/externals
 {{- end }}
@@ -136,7 +161,7 @@ volumeMounts:
   {{- range $i, $volume := .Values.template.spec.volumes }}
     {{- if eq $volume.name "work" }}
       {{- $createWorkVolume = 0 }}
-- {{ $volume | toYaml | nindent 2 }}
+- {{ $volume | toYaml | nindent 2 | trim }}
     {{- end }}
   {{- end }}
   {{- if eq $createWorkVolume 1 }}
@@ -150,7 +175,7 @@ volumeMounts:
   {{- range $i, $volume := .Values.template.spec.volumes }}
     {{- if eq $volume.name "work" }}
       {{- $createWorkVolume = 0 }}
-- {{ $volume | toYaml | nindent 2 }}
+- {{ $volume | toYaml | nindent 2 | trim  }}
     {{- end }}
   {{- end }}
   {{- if eq $createWorkVolume 1 }}
@@ -165,7 +190,7 @@ volumeMounts:
 {{- define "gha-runner-scale-set.non-work-volumes" -}}
   {{- range $i, $volume := .Values.template.spec.volumes }}
     {{- if ne $volume.name "work" }}
-- {{ $volume | toYaml | nindent 2 }}
+- {{ $volume | toYaml | nindent 2 | trim }}
     {{- end }}
   {{- end }}
 {{- end }}
@@ -218,12 +243,12 @@ env:
         {{- if eq $env.name "RUNNER_UPDATE_CA_CERTS" }}
           {{- $setRunnerUpdateCaCerts = 0 }}
         {{- end }}
-  - {{ $env | toYaml | nindent 4 }}
+  - {{ $env | toYaml | nindent 4 | trim }}
       {{- end }}
     {{- end }}
     {{- if $setDockerHost }}
   - name: DOCKER_HOST
-    value: unix:///run/docker/docker.sock
+    value: unix:///var/run/docker.sock
     {{- end }}
     {{- if $setRunnerWaitDocker }}
   - name: RUNNER_WAIT_FOR_DOCKER_IN_SECONDS
@@ -255,7 +280,7 @@ volumeMounts:
         {{- if eq $volMount.name "github-server-tls-cert" }}
           {{- $mountGitHubServerTLS = 0 }}
         {{- end }}
-  - {{ $volMount | toYaml | nindent 4 }}
+  - {{ $volMount | toYaml | nindent 4 | trim }}
       {{- end }}
     {{- end }}
     {{- if $mountWork }}
@@ -264,8 +289,7 @@ volumeMounts:
     {{- end }}
     {{- if $mountDindCert }}
   - name: dind-sock
-    mountPath: /run/docker
-    readOnly: true
+    mountPath: /var/run
     {{- end }}
     {{- if $mountGitHubServerTLS }}
   - name: github-server-tls-cert
@@ -357,6 +381,101 @@ volumeMounts:
     {{- if $mountWork }}
   - name: work
     mountPath: /home/runner/_work
+    {{- end }}
+    {{- if $mountGitHubServerTLS }}
+  - name: github-server-tls-cert
+    mountPath: {{ clean (print $tlsConfig.runnerMountPath "/" $tlsConfig.certificateFrom.configMapKeyRef.key) }}
+    subPath: {{ $tlsConfig.certificateFrom.configMapKeyRef.key }}
+    {{- end }}
+  {{- end }}
+{{- end }}
+{{- end }}
+
+{{- define "gha-runner-scale-set.kubernetes-novolume-mode-runner-container" -}}
+{{- $tlsConfig := (default (dict) .Values.githubServerTLS) }}
+{{- range $i, $container := .Values.template.spec.containers }}
+  {{- if eq $container.name "runner" }}
+    {{- $setRunnerImage := "" }}
+    {{- range $key, $val := $container }}
+      {{- if and (ne $key "env") (ne $key "volumeMounts") (ne $key "name") }}
+      {{- if eq $key "image" }}
+        {{- $setRunnerImage = $val }}
+      {{- end }}
+{{ $key }}: {{ $val | toYaml | nindent 2 }}
+      {{- end }}
+    {{- end }}
+    {{- $setContainerHooks := 1 }}
+    {{- $setPodName := 1 }}
+    {{- $setRequireJobContainer := 1 }}
+    {{- $setActionsRunnerImage := 1 }}
+    {{- $setNodeExtraCaCerts := 0 }}
+    {{- $setRunnerUpdateCaCerts := 0 }}
+    {{- if $tlsConfig.runnerMountPath }}
+      {{- $setNodeExtraCaCerts = 1 }}
+      {{- $setRunnerUpdateCaCerts = 1 }}
+    {{- end }}
+env:
+    {{- with $container.env }}
+      {{- range $i, $env := . }}
+        {{- if eq $env.name "ACTIONS_RUNNER_CONTAINER_HOOKS" }}
+          {{- $setContainerHooks = 0 }}
+        {{- end }}
+        {{- if eq $env.name "ACTIONS_RUNNER_IMAGE" }}
+          {{- $setActionsRunnerImage = 0 }}
+        {{- end }}
+        {{- if eq $env.name "ACTIONS_RUNNER_POD_NAME" }}
+          {{- $setPodName = 0 }}
+        {{- end }}
+        {{- if eq $env.name "ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER" }}
+          {{- $setRequireJobContainer = 0 }}
+        {{- end }}
+        {{- if eq $env.name "NODE_EXTRA_CA_CERTS" }}
+          {{- $setNodeExtraCaCerts = 0 }}
+        {{- end }}
+        {{- if eq $env.name "RUNNER_UPDATE_CA_CERTS" }}
+          {{- $setRunnerUpdateCaCerts = 0 }}
+        {{- end }}
+  - {{ $env | toYaml | nindent 4 }}
+      {{- end }}
+    {{- end }}
+    {{- if $setContainerHooks }}
+  - name: ACTIONS_RUNNER_CONTAINER_HOOKS
+    value: /home/runner/k8s-novolume/index.js
+    {{- end }}
+    {{- if $setPodName }}
+  - name: ACTIONS_RUNNER_POD_NAME
+    valueFrom:
+      fieldRef:
+        fieldPath: metadata.name
+    {{- end }}
+    {{- if $setRequireJobContainer }}
+  - name: ACTIONS_RUNNER_REQUIRE_JOB_CONTAINER
+    value: "true"
+    {{- end }}
+    {{- if $setActionsRunnerImage }}
+  - name: ACTIONS_RUNNER_IMAGE
+    value: "{{- $setRunnerImage -}}"
+    {{- end }}
+    {{- if $setNodeExtraCaCerts }}
+  - name: NODE_EXTRA_CA_CERTS
+    value: {{ clean (print $tlsConfig.runnerMountPath "/" $tlsConfig.certificateFrom.configMapKeyRef.key) }}
+    {{- end }}
+    {{- if $setRunnerUpdateCaCerts }}
+  - name: RUNNER_UPDATE_CA_CERTS
+    value: "1"
+    {{- end }}
+    {{- $mountGitHubServerTLS := 0 }}
+    {{- if $tlsConfig.runnerMountPath }}
+      {{- $mountGitHubServerTLS = 1 }}
+    {{- end }}
+volumeMounts:
+    {{- with $container.volumeMounts }}
+      {{- range $i, $volMount := . }}
+        {{- if eq $volMount.name "github-server-tls-cert" }}
+          {{- $mountGitHubServerTLS = 0 }}
+        {{- end }}
+  - {{ $volMount | toYaml | nindent 4 }}
+      {{- end }}
     {{- end }}
     {{- if $mountGitHubServerTLS }}
   - name: github-server-tls-cert
@@ -482,8 +601,8 @@ volumeMounts:
       {{- $managerServiceAccountName = (get $controllerDeployment.metadata.labels "actions.github.com/controller-service-account-name") }}
     {{- end }}
   {{- else if gt $singleNamespaceCounter 0 }}
-    {{- if hasKey $singleNamespaceControllerDeployments .Release.Namespace }}
-      {{- $controllerDeployment = get $singleNamespaceControllerDeployments .Release.Namespace }}
+    {{- if hasKey $singleNamespaceControllerDeployments (include "gha-runner-scale-set.namespace" .) }}
+      {{- $controllerDeployment = get $singleNamespaceControllerDeployments (include "gha-runner-scale-set.namespace" .) }}
       {{- with $controllerDeployment.metadata }}
         {{- $managerServiceAccountName = (get $controllerDeployment.metadata.labels "actions.github.com/controller-service-account-name") }}
       {{- end }}
@@ -526,31 +645,39 @@ volumeMounts:
     {{- end }}
   {{- end }}
   {{- if and (eq $multiNamespacesCounter 0) (eq $singleNamespaceCounter 0) }}
-    {{- fail "No gha-rs-controller deployment found using label (app.kubernetes.io/part-of=gha-rs-controller). Consider setting controllerServiceAccount.name in values.yaml to be explicit if you think the discovery is wrong." }}
+    {{- fail "No gha-rs-controller deployment found using label (app.kubernetes.io/part-of=gha-rs-controller). Consider setting controllerServiceAccount.namespace in values.yaml to be explicit if you think the discovery is wrong." }}
   {{- end }}
   {{- if and (gt $multiNamespacesCounter 0) (gt $singleNamespaceCounter 0) }}
-    {{- fail "Found both gha-rs-controller installed with flags.watchSingleNamespace set and unset in cluster, this is not supported. Consider setting controllerServiceAccount.name in values.yaml to be explicit if you think the discovery is wrong." }}
+    {{- fail "Found both gha-rs-controller installed with flags.watchSingleNamespace set and unset in cluster, this is not supported. Consider setting controllerServiceAccount.namespace in values.yaml to be explicit if you think the discovery is wrong." }}
   {{- end }}
   {{- if gt $multiNamespacesCounter 1 }}
-    {{- fail "More than one gha-rs-controller deployment found using label (app.kubernetes.io/part-of=gha-rs-controller). Consider setting controllerServiceAccount.name in values.yaml to be explicit if you think the discovery is wrong." }}
+    {{- fail "More than one gha-rs-controller deployment found using label (app.kubernetes.io/part-of=gha-rs-controller). Consider setting controllerServiceAccount.namespace in values.yaml to be explicit if you think the discovery is wrong." }}
   {{- end }}
   {{- if eq $multiNamespacesCounter 1 }}
     {{- with $controllerDeployment.metadata }}
       {{- $managerServiceAccountNamespace = (get $controllerDeployment.metadata.labels "actions.github.com/controller-service-account-namespace") }}
     {{- end }}
   {{- else if gt $singleNamespaceCounter 0 }}
-    {{- if hasKey $singleNamespaceControllerDeployments .Release.Namespace }}
-      {{- $controllerDeployment = get $singleNamespaceControllerDeployments .Release.Namespace }}
+    {{- if hasKey $singleNamespaceControllerDeployments (include "gha-runner-scale-set.namespace" .) }}
+      {{- $controllerDeployment = get $singleNamespaceControllerDeployments (include "gha-runner-scale-set.namespace" .) }}
       {{- with $controllerDeployment.metadata }}
         {{- $managerServiceAccountNamespace = (get $controllerDeployment.metadata.labels "actions.github.com/controller-service-account-namespace") }}
       {{- end }}
     {{- else }}
-      {{- fail "No gha-rs-controller deployment that watch this namespace found using label (actions.github.com/controller-watch-single-namespace). Consider setting controllerServiceAccount.name in values.yaml to be explicit if you think the discovery is wrong." }}
+      {{- fail "No gha-rs-controller deployment that watch this namespace found using label (actions.github.com/controller-watch-single-namespace). Consider setting controllerServiceAccount.namespace in values.yaml to be explicit if you think the discovery is wrong." }}
     {{- end }}
   {{- end }}
   {{- if eq $managerServiceAccountNamespace "" }}
-    {{- fail "No service account namespace found for gha-rs-controller deployment using label (actions.github.com/controller-service-account-namespace), consider setting controllerServiceAccount.name in values.yaml to be explicit if you think the discovery is wrong." }}
+    {{- fail "No service account namespace found for gha-rs-controller deployment using label (actions.github.com/controller-service-account-namespace), consider setting controllerServiceAccount.namespace in values.yaml to be explicit if you think the discovery is wrong." }}
   {{- end }}
 {{- $managerServiceAccountNamespace }}
+{{- end }}
+{{- end }}
+
+{{- define "gha-runner-scale-set.namespace" -}}
+{{- if .Values.namespaceOverride }}
+  {{- .Values.namespaceOverride }}
+{{- else }}
+  {{- .Release.Namespace }}
 {{- end }}
 {{- end }}
