@@ -2,6 +2,10 @@
 name: keycloak-operator
 # -- Annotations to be added to the Deployment
 annotations: {}
+# -- Cluster domain for constructing service DNS names
+clusterDomain: cluster.local
+# -- Labels to be added to the pod
+podLabels: {}
 # -- Node labels for pod assignment
 nodeSelector: {}
 # -- Node tolerations for server scheduling to nodes with taints
@@ -9,6 +13,8 @@ tolerations: []
 # -- Affinity for pod assignment
 affinity: {}
 image:
+  # -- KubeRocketCI keycloak-operator Docker image registry.
+  registry: ""
   # -- KubeRocketCI keycloak-operator Docker image name. The released image can be found on [Dockerhub](https://hub.docker.com/r/epamedp/keycloak-operator)
   repository: epamedp/keycloak-operator
   # if not defined then .Chart.AppVersion is used
@@ -58,3 +64,7 @@ clusterReconciliationEnabled: false
 # -- If set to true, the operator will set the owner reference for all resources that have Keycloak or KeycloakRealm as reference.
 # This is legacy behavior and not recommended for use. In the future, this will be set to false by default.
 enableOwnerRef: true
+
+# -- If set to true, enables webhook resources (ValidatingWebhookConfiguration, Service, and Certificate).
+# Webhooks require cert-manager to be installed in the cluster.
+enableWebhooks: true
