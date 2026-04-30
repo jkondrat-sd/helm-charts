@@ -15,6 +15,9 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ include "velero.chart" . }}
+  {{- with .Values.kubectl.labels }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   backoffLimit: 3
   template:
@@ -36,6 +39,7 @@ spec:
       {{- end }}
     {{- end }}
       serviceAccountName: {{ include "velero.serverServiceAccount" . }}-upgrade-crds
+      automountServiceAccountToken: {{ .Values.upgradeCRDsJob.automountServiceAccountToken }}
       initContainers:
         - name: kubectl
           {{- if .Values.kubectl.image.digest }}
@@ -71,11 +75,11 @@ spec:
           {{- end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           command:
-            - /tmp/sh
+            - {{ .Values.upgradeCRDsJob.shellCmd | default "/tmp/sh" }}
           args:
             - -c
-            - /velero install --crds-only --dry-run -o yaml | /tmp/kubectl apply -f -
-          {{- with .Values.resources }}
+            - {{ .Values.upgradeCRDsJob.updateCmd | default "/velero install --crds-only --dry-run -o yaml | /tmp/kubectl apply -f -" }}
+          {{- with .Values.upgradeJobResources }}
           resources:
             {{- toYaml . | nindent 12 }}
           {{- end }}
@@ -86,9 +90,21 @@ spec:
           volumeMounts:
             - mountPath: /tmp
               name: crds
+          {{- if (.Values.upgradeCRDsJob).extraVolumeMounts }}
+          {{- toYaml .Values.upgradeCRDsJob.extraVolumeMounts | nindent 12 }}
+          {{- end }}
+          {{- if (.Values.upgradeCRDsJob).extraEnvVars }}
+          env:
+          {{- with .Values.upgradeCRDsJob.extraEnvVars }}
+          {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- end }}
       volumes:
         - name: crds
           emptyDir: {}
+        {{- if (.Values.upgradeCRDsJob).extraVolumes }}
+        {{- toYaml .Values.upgradeCRDsJob.extraVolumes | nindent 8 }}
+        {{- end }}
       restartPolicy: OnFailure
       {{- with $podSecurityContext }}
       securityContext:

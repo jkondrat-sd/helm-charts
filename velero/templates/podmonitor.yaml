@@ -1,12 +1,12 @@
-{{ if and (and .Values.metrics.enabled .Values.metrics.serviceMonitor.enabled) (or (not .Values.metrics.serviceMonitor.autodetect) (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1")) }}
+{{ if and (and .Values.metrics.enabled .Values.metrics.nodeAgentPodMonitor.enabled) (or (not .Values.metrics.nodeAgentPodMonitor.autodetect) (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1")) }}
 apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
+kind: PodMonitor
 metadata:
-  name: {{ include "velero.fullname" . }}
-  {{- if .Values.metrics.serviceMonitor.namespace }}
-  namespace: {{ .Values.metrics.serviceMonitor.namespace }}
+  name: node-agent
+  {{- if .Values.metrics.nodeAgentPodMonitor.namespace }}
+  namespace: {{ .Values.metrics.nodeAgentPodMonitor.namespace }}
   {{- end }}
-  {{- with .Values.metrics.serviceMonitor.annotations }}
+  {{- with .Values.metrics.nodeAgentPodMonitor.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -15,7 +15,7 @@ metadata:
     app.kubernetes.io/instance: {{ .Release.Name }}
     app.kubernetes.io/managed-by: {{ .Release.Service }}
     helm.sh/chart: {{ include "velero.chart" . }}
-  {{- with .Values.metrics.serviceMonitor.additionalLabels }}
+  {{- with .Values.metrics.nodeAgentPodMonitor.additionalLabels }}
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
@@ -26,7 +26,11 @@ spec:
     matchLabels:
       app.kubernetes.io/name: {{ include "velero.name" . }}
       app.kubernetes.io/instance: {{ .Release.Name }}
-  endpoints:
+      name: node-agent
+    {{- with .Values.nodeAgent.podLabels }}
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  podMetricsEndpoints:
   - port: http-monitoring
     {{- with .Values.metrics.scrapeInterval }}
     interval: {{ . }}
@@ -34,16 +38,16 @@ spec:
     {{- with .Values.metrics.scrapeTimeout }}
     scrapeTimeout: {{ . }}
     {{- end }}
-    {{- with .Values.metrics.serviceMonitor.scheme }}
+    {{- with .Values.metrics.nodeAgentPodMonitor.scheme }}
     scheme: {{ . }}
     {{- end }}
-    {{- with .Values.metrics.serviceMonitor.metricRelabelings }}
+    {{- with .Values.metrics.nodeAgentPodMonitor.metricRelabelings }}
     metricRelabelings: {{ toYaml . | nindent 6 }}
     {{- end }}
-    {{- with .Values.metrics.serviceMonitor.relabelings }}
+    {{- with .Values.metrics.nodeAgentPodMonitor.relabelings }}
     relabelings: {{ toYaml . | nindent 6 }}
     {{- end }}
-    {{- with .Values.metrics.serviceMonitor.tlsConfig }}
+    {{- with .Values.metrics.nodeAgentPodMonitor.tlsConfig }}
     tlsConfig: {{ toYaml . | nindent 6 }}
     {{- end }}
 {{- end }}
