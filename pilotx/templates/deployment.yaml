@@ -336,7 +336,7 @@ spec:
                   key: {{ (get $keycloakClientSecretKeys "clientSecret" | default "KEYCLOAK_ADMIN_CLIENT_SECRET") }}
             {{- end }}
 
-            # Samba Bridge Configuration (ADR021)
+            # Samba Bridge Configuration
             {{- if $bridgeEnabled }}
             - name: PILOTX_BRIDGE_ID
               value: {{ (get $bridgeConfig "bridgeId" | required "appConfig.bridge.bridgeId is required when appConfig.bridge.enabled=true") | quote }}
