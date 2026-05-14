@@ -1,5 +1,5 @@
 {{- /*
-Generated from 'prometheus' from https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/3425561cdfea89a8ea65194c56dfcd81b2e84afd/manifests/grafana-dashboardDefinitions.yaml
+Generated from 'prometheus' from https://raw.githubusercontent.com/prometheus-operator/kube-prometheus/776f65d375945cf564ce8a4f5bb8ec396c4e6d77/manifests/grafana-dashboardDefinitions.yaml
 Do not change in-place! In order to change this file first read following link:
 https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack/hack
 */ -}}
