@@ -1,6 +1,6 @@
-{{- if gt (int .Values.gateway.replicas) 1 }}
+{{- if and (gt (int .Values.gateway.replicas) 1) .Values.gateway.podDisruptionBudget.enabled .Values.gateway.enabled }}
 {{ $dict := dict "ctx" . "component" "gateway" }}
-apiVersion: {{ include "tempo.pdb.apiVersion" . }}
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ include "tempo.resourceName" $dict }}
@@ -12,4 +12,7 @@ spec:
     matchLabels:
       {{- include "tempo.selectorLabels" $dict | nindent 6 }}
   maxUnavailable: {{ .Values.gateway.maxUnavailable }}
+  {{- with .Values.gateway.podDisruptionBudget.unhealthyPodEvictionPolicy }}
+  unhealthyPodEvictionPolicy: {{ . }}
+  {{- end }}
 {{- end }}

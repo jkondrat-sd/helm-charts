@@ -7,12 +7,16 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "tempo.labels" $dict | nindent 4 }}
+  {{- with .Values.gateway.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
-  minReadySeconds: 10
+  minReadySeconds: {{ .Values.gateway.minReadySeconds }}
 {{- if not .Values.gateway.autoscaling.enabled }}
   replicas: {{ .Values.gateway.replicas }}
 {{- end }}
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: {{ .Values.tempo.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "tempo.selectorLabels" $dict | nindent 6 }}
@@ -36,7 +40,7 @@ spec:
         {{- end }}
     spec:
       {{- if or (.Values.gateway.priorityClassName) (.Values.global.priorityClassName) }}
-      priorityClassName: {{ default .Values.gateway.priorityClassName .Values.global.priorityClassName }}
+      priorityClassName: {{ tpl (default .Values.gateway.priorityClassName .Values.global.priorityClassName) . }}
       {{- end }}
       serviceAccountName: {{ include "tempo.serviceAccountName" . }}
       {{- with .Values.tempo.podSecurityContext }}
@@ -45,7 +49,7 @@ spec:
       {{- end }}
       terminationGracePeriodSeconds: {{ .Values.gateway.terminationGracePeriodSeconds }}
       enableServiceLinks: false
-      {{- include "tempo.gatewayImagePullSecrets" . | nindent 6 -}}
+      {{- include "tempo.componentImagePullSecrets" (dict "ctx" . "component" "gateway" "noTempoFallback" true) | nindent 6 -}}
       {{- with .Values.gateway.hostAliases }}
       hostAliases:
         {{- toYaml . | nindent 8 }}
@@ -58,6 +62,11 @@ spec:
             - name: http-metrics
               containerPort: 8080
               protocol: TCP
+          {{- if .Values.traces.otlp.grpc.enabled }}
+            - name: grpc-otlp
+              containerPort: {{ .Values.traces.otlp.grpc.port }}
+              protocol: TCP
+          {{- end }}
           {{- if or .Values.global.extraEnv .Values.gateway.extraEnv }}
           env:
             {{- with .Values.global.extraEnv }}
@@ -67,10 +76,17 @@ spec:
               {{- toYaml . | nindent 12 }}
             {{- end }}
           {{- end }}
-          {{- with .Values.gateway.extraEnvFrom }}
+          {{- if or .Values.global.extraEnvFrom .Values.gateway.extraEnvFrom }}
           envFrom:
-            {{- toYaml . | nindent 12 }}
+            {{- with .Values.gateway.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.gateway.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.gateway.readinessProbe | nindent 12 }}
           volumeMounts:
@@ -88,6 +104,11 @@ spec:
               mountPath: /tmp
             - name: docker-entrypoint-d-override
               mountPath: /docker-entrypoint.d
+            {{- if .Values.gateway.nginxConfig.ssl }}
+            - name: gateway-tls
+              mountPath: /etc/nginx/ssl
+              readOnly: true
+            {{- end }}
             {{- if .Values.gateway.extraVolumeMounts }}
             {{- toYaml .Values.gateway.extraVolumeMounts | nindent 12 }}
             {{- end }}
@@ -97,11 +118,12 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-      {{- if semverCompare ">= 1.19-0" .Capabilities.KubeVersion.Version }}
+        {{- with .Values.gateway.extraContainers }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- with .Values.gateway.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- tpl . $ | nindent 8 }}
-      {{- end }}
       {{- end }}
       {{- with .Values.gateway.affinity }}
       affinity:
@@ -133,6 +155,11 @@ spec:
           emptyDir: {}
         - name: docker-entrypoint-d-override
           emptyDir: {}
+        {{- if .Values.gateway.nginxConfig.ssl }}
+        - name: gateway-tls
+          secret:
+            secretName: {{ tpl .Values.gateway.nginxConfig.tlsSecretName . }}
+        {{- end }}
         {{- if .Values.gateway.extraVolumes }}
         {{- toYaml .Values.gateway.extraVolumes | nindent 8 }}
         {{- end }}

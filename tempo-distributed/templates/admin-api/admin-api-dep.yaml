@@ -11,6 +11,7 @@ metadata:
   namespace: {{ .Release.Namespace | quote }}
 spec:
   replicas: {{ .Values.adminApi.replicas }}
+  revisionHistoryLimit: {{ .Values.tempo.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "tempo.selectorLabels" $dict | nindent 6 }}
@@ -29,7 +30,7 @@ spec:
     spec:
       serviceAccountName: {{ template "tempo.serviceAccountName" . }}
       {{- if .Values.adminApi.priorityClassName }}
-      priorityClassName: {{ .Values.adminApi.priorityClassName }}
+      priorityClassName: {{ tpl .Values.adminApi.priorityClassName . }}
       {{- end }}
       securityContext:
         {{- toYaml .Values.adminApi.securityContext | nindent 8 }}
@@ -37,7 +38,7 @@ spec:
         {{- with .Values.adminApi.initContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-      {{- include "tempo.adminApiImagePullSecrets" . | nindent 6 -}}
+      {{- include "tempo.componentImagePullSecrets" (dict "ctx" . "component" "admin-api") | nindent 6 -}}
       {{- with .Values.adminApi.hostAliases }}
       hostAliases:
         {{- toYaml . | nindent 8 }}
@@ -51,6 +52,9 @@ spec:
             - "-config.expand-env=true"
             - "-config.file=/conf/tempo.yaml"
             {{- range $key, $value := .Values.adminApi.extraArgs }}
+            - "-{{ $key }}={{ $value }}"
+            {{- end }}
+            {{- range $key, $value := .Values.global.extraArgs }}
             - "-{{ $key }}={{ $value }}"
             {{- end }}
           volumeMounts:
@@ -82,15 +86,7 @@ spec:
             {{- toYaml .Values.adminApi.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.adminApi.containerSecurityContext | nindent 12 }}
-          {{- if or .Values.global.extraEnv .Values.adminApi.env }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.adminApi.env }}
-              {{ toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
+          {{- include "tempo.componentEnv" (dict "extraEnv" (concat .Values.global.extraEnv .Values.adminApi.env) "resources" .Values.adminApi.resources "factor" .Values.global.goSettings.goMemLimitFactor "gogc" .Values.global.goSettings.gogc) | nindent 10 }}
           envFrom:
             {{- with .Values.global.extraEnvFrom }}
               {{- toYaml . | nindent 12 }}
@@ -103,11 +99,9 @@ spec:
         {{- end }}
       nodeSelector:
         {{- toYaml .Values.adminApi.nodeSelector | nindent 8 }}
-      {{- if semverCompare ">= 1.19-0" .Capabilities.KubeVersion.Version }}
       {{- with .Values.adminApi.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- tpl . $ | nindent 8 }}
-      {{- end }}
       {{- end }}
       {{- with .Values.adminApi.affinity }}
       affinity:

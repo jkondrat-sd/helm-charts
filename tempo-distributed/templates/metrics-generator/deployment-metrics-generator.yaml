@@ -12,9 +12,9 @@ metadata:
   {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  minReadySeconds: 10
+  minReadySeconds: {{ .Values.metricsGenerator.minReadySeconds }}
   replicas: {{ .Values.metricsGenerator.replicas }}
-  revisionHistoryLimit: 10
+  revisionHistoryLimit: {{ .Values.tempo.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "tempo.selectorLabels" $dict | nindent 6 }}
@@ -38,7 +38,7 @@ spec:
         {{- end }}
     spec:
       {{- if or (.Values.metricsGenerator.priorityClassName) (.Values.global.priorityClassName) }}
-      priorityClassName: {{ default .Values.metricsGenerator.priorityClassName .Values.global.priorityClassName }}
+      priorityClassName: {{ tpl (default .Values.metricsGenerator.priorityClassName .Values.global.priorityClassName) . }}
       {{- end }}
       serviceAccountName: {{ include "tempo.serviceAccountName" . }}
       {{- with .Values.tempo.podSecurityContext }}
@@ -46,17 +46,21 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       enableServiceLinks: false
-      {{- include "tempo.metricsGeneratorImagePullSecrets" . | nindent 6 -}}
+      {{- include "tempo.componentImagePullSecrets" (dict "ctx" . "component" "metrics-generator") | nindent 6 -}}
       {{- with .Values.metricsGenerator.hostAliases }}
       hostAliases:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      initContainers:
+        {{- toYaml .Values.metricsGenerator.initContainers | nindent 8 }}
       containers:
         - args:
             - -target=metrics-generator
             - -config.file=/conf/tempo.yaml
-            - -mem-ballast-size-mbs=1024
             {{- with .Values.metricsGenerator.extraArgs }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.global.extraArgs }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
           image: {{ include "tempo.imageReference" $dict }}
@@ -67,19 +71,18 @@ spec:
             - name: {{ .name | quote }}
               containerPort: {{ .port }}
             {{- end }}
-          {{- if or .Values.global.extraEnv .Values.metricsGenerator.extraEnv }}
-          env:
-            {{- with .Values.global.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-            {{- with .Values.metricsGenerator.extraEnv }}
-              {{- toYaml . | nindent 12 }}
-            {{- end }}
-          {{- end }}
-          {{- with .Values.metricsGenerator.extraEnvFrom }}
+          {{- include "tempo.componentEnv" (dict "extraEnv" (concat .Values.global.extraEnv .Values.metricsGenerator.extraEnv) "resources" .Values.metricsGenerator.resources "factor" .Values.global.goSettings.goMemLimitFactor "gogc" .Values.global.goSettings.gogc) | nindent 10 }}
+          {{- if or .Values.global.extraEnvFrom .Values.metricsGenerator.extraEnvFrom }}
           envFrom:
-            {{- toYaml . | nindent 12 }}
+            {{- with .Values.global.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- with .Values.metricsGenerator.extraEnvFrom }}
+              {{- toYaml . | nindent 12 }}
+            {{- end }}
           {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.tempo.livenessProbe | nindent 12 }}
           readinessProbe:
             {{- toYaml .Values.tempo.readinessProbe | nindent 12 }}
           resources:
@@ -103,11 +106,9 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
       terminationGracePeriodSeconds: {{ .Values.metricsGenerator.terminationGracePeriodSeconds }}
-      {{- if semverCompare ">= 1.19-0" .Capabilities.KubeVersion.Version }}
       {{- with .Values.metricsGenerator.topologySpreadConstraints }}
       topologySpreadConstraints:
         {{- tpl . $ | nindent 8 }}
-      {{- end }}
       {{- end }}
       {{- with .Values.metricsGenerator.affinity }}
       affinity:
