@@ -1,10 +1,6 @@
-{{- define "tempo.ingesterImagePullSecrets" -}}
-{{- $dict := dict "tempo" .Values.tempo.image "component" .Values.ingester.image "global" .Values.global.image -}}
-{{- include "tempo.imagePullSecrets" $dict -}}
-{{- end }}
 {{- define "ingester.zoneAwareReplicationMap" -}}
 {{- $zonesMap := (dict) -}}
-{{- $defaultZone := (dict "affinity" .ctx.Values.ingester.affinity "nodeSelector" .ctx.Values.ingester.nodeSelector "replicas" .ctx.Values.ingester.replicas "storageClass" .ctx.Values.ingester.storageClass) -}}
+{{- $defaultZone := (dict "affinity" .ctx.Values.ingester.affinity "annotations" (default (dict)) "nodeSelector" .ctx.Values.ingester.nodeSelector "podAnnotations" (default (dict)) "replicas" .ctx.Values.ingester.replicas "storageClass" .ctx.Values.ingester.storageClass) -}}
 {{- if .ctx.Values.ingester.zoneAwareReplication.enabled -}}
 {{- $numberOfZones := len .ctx.Values.ingester.zoneAwareReplication.zones -}}
 {{- if lt $numberOfZones 3 -}}
@@ -13,12 +9,10 @@
 {{- $requestedReplicas := .ctx.Values.ingester.replicas -}}
 {{- $replicaPerZone := div (add $requestedReplicas $numberOfZones -1) $numberOfZones -}}
 {{- range $idx, $rolloutZone := .ctx.Values.ingester.zoneAwareReplication.zones -}}
-{{- $_ := set $zonesMap $rolloutZone.name (dict
-"affinity" (($rolloutZone.extraAffinity | default (dict)) | mergeOverwrite (include "ingester.zoneAntiAffinity" (dict "rolloutZoneName" $rolloutZone.name "topologyKey" $.ctx.Values.ingester.zoneAwareReplication.topologyKey) | fromYaml))
-"nodeSelector" ($rolloutZone.nodeSelector | default (dict) )
-"replicas" $replicaPerZone
-"storageClass" $rolloutZone.storageClass
-) -}}
+{{- $extraAffinity := $rolloutZone.extraAffinity | default (dict) -}}
+{{- $zoneAntiAffinity := include "ingester.zoneAntiAffinity" (dict "rolloutZoneName" $rolloutZone.name "topologyKey" $.ctx.Values.ingester.zoneAwareReplication.topologyKey) | fromYaml -}}
+{{- $mergedAffinity := mergeOverwrite $extraAffinity $zoneAntiAffinity -}}
+{{- $_ := set $zonesMap $rolloutZone.name (dict "affinity" $mergedAffinity "annotations" ($rolloutZone.annotations | default (dict)) "nodeSelector" ($rolloutZone.nodeSelector | default (dict)) "podAnnotations" ($rolloutZone.podAnnotations | default (dict)) "replicas" $replicaPerZone  "storageClass" $rolloutZone.storageClass) -}}
 {{- end -}}
 {{- else -}}
 {{- $_ := set $zonesMap "" $defaultZone -}}
@@ -76,20 +70,12 @@ name: {{ printf "%s-%s" .component .rolloutZoneName }}
 rollout-group: {{ .component }}
 zone: {{ .rolloutZoneName }}
 {{- end }}
-helm.sh/chart: {{ include "tempo.chart" .ctx }}
-app.kubernetes.io/name: {{ include "tempo.name" .ctx }}
-app.kubernetes.io/instance: {{ .ctx.Release.Name }}
-{{- if .component }}
-app.kubernetes.io/component: {{ .component }}
+{{ include "tempo.labels" (dict "ctx" .ctx "component" .component) }}
+{{- with .ctx.Values.ingester.labels }}
+{{ toYaml . }}
 {{- end }}
-{{- if .memberlist }}
-app.kubernetes.io/part-of: memberlist
-{{- end }}
-{{- if .ctx.Chart.AppVersion }}
-app.kubernetes.io/version: {{ .ctx.Chart.AppVersion | quote }}
-{{- end }}
-app.kubernetes.io/managed-by: {{ .ctx.Release.Service }}
 {{- end -}}
+
 {{/*
 Resource name template
 */}}
